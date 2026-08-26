@@ -234,6 +234,7 @@
         <tr>
           <th>#</th><th>Time</th><th style="text-align:right">Jogos</th>
           <th style="text-align:right">Mandante</th><th style="text-align:right">Visitante</th>
+          <th style="text-align:right">V</th><th style="text-align:right">E</th><th style="text-align:right">D</th>
           <th style="text-align:right">Nota média</th>
         </tr>
       </thead>
@@ -473,20 +474,30 @@ function initDashboard(){
   function renderStandings(games){
     const stats = {};
     games.forEach(g => {
+      const gh = g.goals_home, ga = g.goals_away;
+      const hasResult = gh != null && ga != null;
       [ [g.home,'home'], [g.away,'away'] ].forEach(([team, side]) => {
-        if(!stats[team]) stats[team] = { home:0, away:0, ratings:[] };
+        if(!stats[team]) stats[team] = { home:0, away:0, ratings:[], w:0, d:0, l:0 };
         stats[team][side]++;
         if(g.rating != null) stats[team].ratings.push(g.rating);
+        if(hasResult){
+          const forGoals = side === 'home' ? gh : ga;
+          const againstGoals = side === 'home' ? ga : gh;
+          if(forGoals > againstGoals) stats[team].w++;
+          else if(forGoals === againstGoals) stats[team].d++;
+          else stats[team].l++;
+        }
       });
     });
     const rows = Object.entries(stats).map(([team, s]) => ({
       team, total: s.home+s.away, home: s.home, away: s.away,
+      w: s.w, d: s.d, l: s.l,
       avgRating: s.ratings.length ? (s.ratings.reduce((a,b)=>a+b,0)/s.ratings.length) : null
     })).sort((a,b) => b.total - a.total).slice(0, 15);
 
     const tbody = document.querySelector('#standingsTable tbody');
     if(rows.length === 0){
-      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">Nenhum jogo encontrado com esses filtros.</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">Nenhum jogo encontrado com esses filtros.</div></td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((r,i) => `
@@ -496,6 +507,9 @@ function initDashboard(){
         <td class="num">${r.total}</td>
         <td class="num secondary">${r.home}</td>
         <td class="num secondary">${r.away}</td>
+        <td class="num" style="color:#7ec98f">${r.w}</td>
+        <td class="num secondary">${r.d}</td>
+        <td class="num" style="color:#d9756a">${r.l}</td>
         <td class="num secondary">${r.avgRating != null ? r.avgRating.toFixed(1) : '—'}</td>
       </tr>`).join('');
   }
