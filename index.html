@@ -187,6 +187,7 @@
   @media (prefers-reduced-motion: reduce){
     html{ scroll-behavior:auto; }
   }
+.scroll-box{max-height:720px;overflow-y:auto} table.standings th{position:sticky;top:0;background:#12402f;z-index:1} .rank-list{max-height:640px;overflow-y:auto;padding-right:6px} td.team:hover{color:var(--amber)}
 </style>
 </head>
 <body>
@@ -208,14 +209,12 @@
   </section>
 
   <div class="filters">
-    <div>
-      <label for="fCompetition">Competição</label>
-      <select id="fCompetition"><option value="">Todas</option></select>
-    </div>
-    <div>
-      <label for="fTeam">Time</label>
-      <input type="text" id="fTeam" placeholder="Buscar time...">
-    </div>
+    <div><label for="fMonth">Mês</label><select id="fMonth"><option value="">Todos</option>
+      <option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option><option value="4">Abril</option><option value="5">Maio</option><option value="6">Junho</option><option value="7">Julho</option><option value="8">Agosto</option><option value="9">Setembro</option><option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option></select></div>
+    <div><label for="fCompetition">Competição</label><select id="fCompetition"><option value="">Todas</option></select></div>
+    <div><label for="fTeam">Time</label><input type="text" id="fTeam" list="teamList" placeholder="Buscar time..."><datalist id="teamList"></datalist></div>
+    <div><label for="fRole">Mando (do time buscado)</label><select id="fRole"><option value="">Geral</option><option value="home">Só como mandante</option><option value="away">Só como visitante</option></select></div>
+    <div><label for="fStadium">Estádio</label><input type="text" id="fStadium" list="stadiumList" placeholder="Buscar estádio..."><datalist id="stadiumList"></datalist></div>
     <span class="filter-count" id="filterCount"></span>
     <button class="filter-reset" id="resetFilters">Limpar filtros</button>
   </div>
@@ -229,17 +228,17 @@
   <h2 class="section-title">Times mais assistidos</h2>
   <p class="section-sub">Classificação por número de jogos vistos — como mandante ou visitante</p>
   <div class="card">
-    <table class="standings" id="standingsTable">
+    <div class="scroll-box"><table class="standings" id="standingsTable">
       <thead>
         <tr>
           <th>#</th><th>Time</th><th style="text-align:right">Jogos</th>
           <th style="text-align:right">Mandante</th><th style="text-align:right">Visitante</th>
           <th style="text-align:right">V</th><th style="text-align:right">E</th><th style="text-align:right">D</th>
-          <th style="text-align:right">Nota média</th>
+          <th style="text-align:right">Aprov.</th><th style="text-align:right">Nota média</th>
         </tr>
       </thead>
       <tbody></tbody>
-    </table>
+    </table></div>
   </div>
 
   <div class="grid-2" style="margin-top:46px;">
@@ -276,7 +275,7 @@
 </div>
 
 <footer>
-  <span>923 jogos catalogados · 2023–2026</span>
+  <span id="footCount"></span>
   <span>Feito a partir das suas planilhas anuais</span>
 </footer>
 
@@ -305,7 +304,7 @@ function initDashboard(){
   Chart.defaults.font.family = "'IBM Plex Sans', sans-serif";
   Chart.defaults.color = CHALK_DIM;
 
-  let state = { year: 'all', competition: '', team: '' };
+  let state = { year: 'all', competition: '', team: '', month: '', stadium: '', role: '' };
 
   const years = Array.from(new Set(GAMES.map(g => g.year))).sort();
 
@@ -338,27 +337,54 @@ function initDashboard(){
   });
   compSelect.addEventListener('change', () => { state.competition = compSelect.value; renderAll(); });
 
-  const teamInput = document.getElementById('fTeam');
-  let teamDebounce;
-  teamInput.addEventListener('input', () => {
-    clearTimeout(teamDebounce);
-    teamDebounce = setTimeout(() => { state.team = teamInput.value.trim().toLowerCase(); renderAll(); }, 200);
-  });
-
+  const teamNames = [...new Set(GAMES.flatMap(g => [g.home, g.away]))].sort((a,b) => a.localeCompare(b));
+  const stadNames = [...new Set(GAMES.map(g => g.stadium).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+  const exactTeams = new Set(teamNames.map(x => x.toLowerCase()));
+  const exactStads = new Set(stadNames.map(x => x.toLowerCase()));
+  const optHtml = arr => arr.map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+  document.getElementById('teamList').innerHTML = optHtml(teamNames);
+  document.getElementById('stadiumList').innerHTML = optHtml(stadNames);
+  function bindText(id, key){
+    const el = document.getElementById(id); let t;
+    el.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { state[key] = el.value.trim().toLowerCase(); renderAll(); }, 200); });
+    return el;
+  }
+  const teamInput = bindText('fTeam', 'team');
+  const stadInput = bindText('fStadium', 'stadium');
+  const monthSel = document.getElementById('fMonth'), roleSel = document.getElementById('fRole');
+  monthSel.addEventListener('change', () => { state.month = monthSel.value ? parseInt(monthSel.value) : ''; renderAll(); });
+  roleSel.addEventListener('change', () => { state.role = roleSel.value; renderAll(); });
   document.getElementById('resetFilters').addEventListener('click', () => {
-    state.competition = ''; state.team = '';
-    compSelect.value = ''; teamInput.value = '';
+    state.competition = state.team = state.stadium = state.month = state.role = '';
+    compSelect.value = teamInput.value = stadInput.value = monthSel.value = roleSel.value = '';
     renderAll();
+  });
+  document.querySelector('#standingsTable tbody').addEventListener('click', e => {
+    const td = e.target.closest('td.team'); if(!td) return;
+    const name = decodeURIComponent(td.dataset.team);
+    teamInput.value = name; state.team = name.toLowerCase(); renderAll();
+    document.querySelector('.filters').scrollIntoView({behavior:'smooth', block:'center'});
   });
 
   // ---------- Filtering ----------
+  function matchTeam(name){
+    const n = name.toLowerCase();
+    return exactTeams.has(state.team) ? n === state.team : n.includes(state.team);
+  }
   function filteredGames(){
     return GAMES.filter(g => {
       if(state.year !== 'all' && g.year !== state.year) return false;
+      if(state.month && parseInt(g.date.slice(5,7)) !== state.month) return false;
       if(state.competition && g.competition !== state.competition) return false;
+      if(state.stadium){
+        const gs = (g.stadium || '').toLowerCase();
+        if(exactStads.has(state.stadium) ? gs !== state.stadium : !gs.includes(state.stadium)) return false;
+      }
       if(state.team){
-        const t = state.team;
-        if(!g.home.toLowerCase().includes(t) && !g.away.toLowerCase().includes(t)) return false;
+        const h = matchTeam(g.home), a = matchTeam(g.away);
+        if(state.role === 'home'){ if(!h) return false; }
+        else if(state.role === 'away'){ if(!a) return false; }
+        else if(!h && !a) return false;
       }
       return true;
     });
@@ -474,42 +500,37 @@ function initDashboard(){
   function renderStandings(games){
     const stats = {};
     games.forEach(g => {
-      const gh = g.goals_home, ga = g.goals_away;
-      const hasResult = gh != null && ga != null;
-      [ [g.home,'home'], [g.away,'away'] ].forEach(([team, side]) => {
+      const gh = g.goals_home, ga = g.goals_away, has = gh != null && ga != null;
+      [[g.home,'home'],[g.away,'away']].forEach(([team, side]) => {
+        if(!state.team && state.role && side !== state.role) return;
         if(!stats[team]) stats[team] = { home:0, away:0, ratings:[], w:0, d:0, l:0 };
         stats[team][side]++;
         if(g.rating != null) stats[team].ratings.push(g.rating);
-        if(hasResult){
-          const forGoals = side === 'home' ? gh : ga;
-          const againstGoals = side === 'home' ? ga : gh;
-          if(forGoals > againstGoals) stats[team].w++;
-          else if(forGoals === againstGoals) stats[team].d++;
-          else stats[team].l++;
+        if(has){
+          const f = side === 'home' ? gh : ga, a = side === 'home' ? ga : gh;
+          if(f > a) stats[team].w++; else if(f === a) stats[team].d++; else stats[team].l++;
         }
       });
     });
-    const rows = Object.entries(stats).map(([team, s]) => ({
-      team, total: s.home+s.away, home: s.home, away: s.away,
-      w: s.w, d: s.d, l: s.l,
-      avgRating: s.ratings.length ? (s.ratings.reduce((a,b)=>a+b,0)/s.ratings.length) : null
-    })).sort((a,b) => b.total - a.total).slice(0, 15);
-
+    const rows = Object.entries(stats).map(([team, s]) => {
+      const played = s.w + s.d + s.l;
+      return { team, total: s.home + s.away, home: s.home, away: s.away, w: s.w, d: s.d, l: s.l,
+        aprov: played ? (s.w*3 + s.d) / (played*3) * 100 : null,
+        avgRating: s.ratings.length ? s.ratings.reduce((a,b)=>a+b,0)/s.ratings.length : null };
+    }).sort((a,b) => b.total - a.total);
     const tbody = document.querySelector('#standingsTable tbody');
-    if(rows.length === 0){
-      tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">Nenhum jogo encontrado com esses filtros.</div></td></tr>`;
-      return;
-    }
+    if(!rows.length){ tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state">Nenhum jogo encontrado com esses filtros.</div></td></tr>`; return; }
     tbody.innerHTML = rows.map((r,i) => `
       <tr>
         <td class="pos">${i+1}</td>
-        <td class="team">${r.team}</td>
+        <td class="team" data-team="${encodeURIComponent(r.team)}" style="cursor:pointer" title="Clique para filtrar este time">${r.team}</td>
         <td class="num">${r.total}</td>
         <td class="num secondary">${r.home}</td>
         <td class="num secondary">${r.away}</td>
         <td class="num" style="color:#7ec98f">${r.w}</td>
         <td class="num secondary">${r.d}</td>
         <td class="num" style="color:#d9756a">${r.l}</td>
+        <td class="num">${r.aprov != null ? r.aprov.toFixed(1) + '%' : '—'}</td>
         <td class="num secondary">${r.avgRating != null ? r.avgRating.toFixed(1) : '—'}</td>
       </tr>`).join('');
   }
@@ -530,17 +551,17 @@ function initDashboard(){
   function renderScorers(games){
     const counts = {};
     games.forEach(g => (g.scorers||[]).forEach(s => { counts[s] = (counts[s]||0)+1; }));
-    const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
     renderRankList('scorersList', top);
   }
 
   function renderStadiums(games){
-    const top = buildTopN(games, g => g.stadium, 10);
+    const top = buildTopN(games, g => g.stadium, 100000);
     renderRankList('stadiumsList', top);
   }
 
   function renderBestGames(games){
-    const rated = games.filter(g => g.rating != null).sort((a,b) => b.rating - a.rating).slice(0,10);
+    const rated = games.filter(g => g.rating != null).sort((a,b) => b.rating - a.rating || b.date.localeCompare(a.date));
     const el = document.getElementById('bestGamesList');
     if(rated.length === 0){ el.innerHTML = `<div class="empty-state">Sem dados.</div>`; return; }
     const max = 10;
@@ -562,6 +583,7 @@ function initDashboard(){
     renderCompChart(games);
     renderRatingChart(games);
     renderStandings(games);
+    document.getElementById('footCount').textContent = `${GAMES.length} jogos catalogados · ${years[0]}–${years[years.length-1]}`;
     renderScorers(games);
     renderStadiums(games);
     renderBestGames(games);
